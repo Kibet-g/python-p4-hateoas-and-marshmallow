@@ -15,108 +15,81 @@ app.json.compact = False
 migrate = Migrate(app, db)
 db.init_app(app)
 
+ma = Marshmallow(app)
 api = Api(app)
 
-class Index(Resource):
+# Define the Marshmallow schema
+class NewsletterSchema(ma.SQLAlchemySchema):
+    class Meta:
+        model = Newsletter
+        load_instance = True
 
-    def get(self):
-        
-        response_dict = {
-            "index": "Welcome to the Newsletter RESTful API",
+    id = ma.auto_field()
+    title = ma.auto_field()
+    body = ma.auto_field()
+    published_at = ma.auto_field()
+    edited_at = ma.auto_field()
+
+    url = ma.Hyperlinks(
+        {
+            "self": ma.URLFor("newsletterbyid", values=dict(id="<id>")),
+            "collection": ma.URLFor("newsletters"),
         }
-        
-        response = make_response(
-            response_dict,
-            200,
-        )
+    )
 
-        return response
+# Instantiate single and multiple schemas
+newsletter_schema = NewsletterSchema()
+newsletters_schema = NewsletterSchema(many=True)
+
+# Define API resources
+class Index(Resource):
+    def get(self):
+        response_dict = {"index": "Welcome to the Newsletter RESTful API"}
+        return make_response(response_dict, 200)
 
 api.add_resource(Index, '/')
 
 class Newsletters(Resource):
-
     def get(self):
-        
-        response_dict_list = [n.to_dict() for n in Newsletter.query.all()]
-
-        response = make_response(
-            response_dict_list,
-            200,
-        )
-
-        return response
+        newsletters = Newsletter.query.all()
+        return make_response(newsletters_schema.dump(newsletters), 200)
 
     def post(self):
-        
-        new_record = Newsletter(
-            title=request.form['title'],
-            body=request.form['body'],
+        data = request.get_json()
+        new_newsletter = Newsletter(
+            title=data['title'],
+            body=data['body'],
         )
-
-        db.session.add(new_record)
+        db.session.add(new_newsletter)
         db.session.commit()
 
-        response_dict = new_record.to_dict()
-
-        response = make_response(
-            response_dict,
-            201,
-        )
-
-        return response
+        return make_response(newsletter_schema.dump(new_newsletter), 201)
 
 api.add_resource(Newsletters, '/newsletters')
 
 class NewsletterByID(Resource):
-
     def get(self, id):
-
-        response_dict = Newsletter.query.filter_by(id=id).first().to_dict()
-
-        response = make_response(
-            response_dict,
-            200,
-        )
-
-        return response
+        newsletter = Newsletter.query.get_or_404(id)
+        return make_response(newsletter_schema.dump(newsletter), 200)
 
     def patch(self, id):
+        newsletter = Newsletter.query.get_or_404(id)
+        data = request.get_json()
 
-        record = Newsletter.query.filter_by(id=id).first()
-        for attr in request.form:
-            setattr(record, attr, request.form[attr])
+        for key, value in data.items():
+            setattr(newsletter, key, value)
 
-        db.session.add(record)
         db.session.commit()
-
-        response_dict = record.to_dict()
-
-        response = make_response(
-            response_dict,
-            200
-        )
-
-        return response
+        return make_response(newsletter_schema.dump(newsletter), 200)
 
     def delete(self, id):
-
-        record = Newsletter.query.filter_by(id=id).first()
-        
-        db.session.delete(record)
+        newsletter = Newsletter.query.get_or_404(id)
+        db.session.delete(newsletter)
         db.session.commit()
 
-        response_dict = {"message": "record successfully deleted"}
-
-        response = make_response(
-            response_dict,
-            200
-        )
-
-        return response
+        return make_response({"message": "record successfully deleted"}, 200)
 
 api.add_resource(NewsletterByID, '/newsletters/<int:id>')
-
 
 if __name__ == '__main__':
     app.run(port=5555, debug=True)
